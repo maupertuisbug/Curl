@@ -3,12 +3,14 @@ from networks.gaussian_policy import GaussianMLP
 from networks.action_value import QFunction
 import copy
 import torch.functional as F
+import numpy as np
 
 
 class SAC:
-    def __init__(self, env, replay_buffer):
+    def __init__(self, env, replay_buffer, wandb_run):
         self.env = env
-        self.replay_buffer = replay_buffer
+        self.replay_buffer = replay_buffer.experience
+        self.wandb_run = wandb_run
         self.obs_dim = self.env.observation_spec().shape
         self.action_dim = self.env.action_spec().shape
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -27,7 +29,8 @@ class SAC:
 
   
     def train(self, episodes, max_steps):
-        batch_size = 256
+        batch_size = 32
+        rewards = []
 
         for ep in range(episodes):
             state = self.env.reset()
@@ -110,8 +113,8 @@ class SAC:
 
                 if done:
                     break
-
-            print(f"Episode {ep+1}/{episodes} - Total Reward: {total_reward:.2f}")
+            rewards.append(total_reward)  
+            self.wandb_run.log({'average reward' : np.mean(rewards)}, step = ep)
 
 
 
