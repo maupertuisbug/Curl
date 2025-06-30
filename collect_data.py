@@ -41,7 +41,7 @@ class RB():
                 }
                 self.experience.add(transition)
                 rewards.append(reward)
-            self.wandb_run.log({'average reward c' : np.mean(rewards)}, step = ep)
+            #self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)
             
 
 

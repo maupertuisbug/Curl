@@ -36,6 +36,8 @@ class SAC:
         for ep in range(episodes):
             state = self.env.reset()
             state = torch.tensor(state, dtype=torch.float32).to(self.device)
+            
+
             total_reward = 0
 
             for _ in range(max_steps):
