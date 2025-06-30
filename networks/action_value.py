@@ -5,10 +5,10 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
         torch.nn.init.zeros_(m.bias)
 
-class QFunction:
+class QFunction(torch.nn.Module):
 
     def __init__(self, obs_dim, action_dim, output_dim):
-
+        super().__init__()
         self.obs_dim = obs_dim 
         self.action_dim = action_dim 
         self.output_dim = output_dim

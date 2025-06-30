@@ -10,8 +10,6 @@ class DMCWrapper:
     def __init__(self, env):
         self.env = env
         self.ts = None
-        self._action_spec = env.action_spec()
-        self._obs_spec = env.observation_spec()
 
     def reset(self):
         self.ts = self.env.reset()
@@ -23,15 +21,16 @@ class DMCWrapper:
         reward = self.ts.reward or 0.0
         done = self.ts.last()
         return obs, reward, done, {}
-
+    
     def observation_spec(self):
-        return self._obs_spec
+        return self.env.observation_spec()
 
     def action_spec(self):
-        return self._action_spec
+        return self.env.action_spec()
 
     def _flatten_obs(self, obs_dict):
         return np.concatenate([np.ravel(v) for v in obs_dict.values()])
+
 
 
 
@@ -45,5 +44,5 @@ wandb_run = wandb.init(project="CURL")
 rb = RB(100000, 32, wandb_run)
 rb.collect_init(env, 500, 200)
 envw = DMCWrapper(env)
-agent = SAC(envw, rb)
-agent.train(episodes=100, max_steps=1000)
+agent = SAC(envw, rb, wandb_run)
+agent.train(episodes=400, max_steps=200)

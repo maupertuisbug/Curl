@@ -6,8 +6,9 @@ def init_weights(m):
         torch.nn.init.zeros_(m.bias)
 
 
-class GaussianMLP:
+class GaussianMLP(torch.nn.Module):
     def __init__(self, input_dim, output_dim):
+        super().__init__()
         self.input_dim = input_dim  # you have this in the latent space
         self.output_dim = output_dim
         self.net = torch.nn.Sequential(
@@ -23,8 +24,8 @@ class GaussianMLP:
 
     def forward(self, obs):
         output = self.net(obs)
-        mean = output[:,self.output_dim]
-        log_var = output[self.output_dim, :]
+        mean = output[:,:self.output_dim]
+        log_var = output[:,self.output_dim:]
         log_var = torch.clamp(log_var, self.log_min, self.log_max)
         std = torch.exp(log_var)
 

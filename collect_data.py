@@ -14,6 +14,7 @@ class RB():
         self.experience = ReplayBuffer(
             storage=ListStorage(max_size=max_size), batch_size = batch_size)
         self.wandb_run = wandb_run
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collect_init(self, env, episodes, max_steps):
         
@@ -32,14 +33,15 @@ class RB():
                 state = env.step(action)
                 reward = state.reward or 0.0
                 transition = {
-                    "obs" : torch.tensor(obs),
-                    "action" : torch.tensor(action),
-                    "next_obs" : torch.tensor(flatten_observation(state.observation)),
-                    "reward" : torch.tensor(reward)
+                    "obs" : torch.tensor(obs, device=self.device),
+                    "action" : torch.tensor(action, device=self.device),
+                    "next_obs" : torch.tensor(flatten_observation(state.observation), device=self.device),
+                    "reward" : torch.tensor(reward, device=self.device),
+                    "done"  : torch.tensor(int(state.last()), device=self.device)
                 }
                 self.experience.add(transition)
                 rewards.append(reward)
-            self.wandb_run.log({'average reward' : np.mean(rewards)}, step = ep)
+            self.wandb_run.log({'average reward c' : np.mean(rewards)}, step = ep)
             
 
 
