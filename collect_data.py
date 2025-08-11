@@ -31,9 +31,11 @@ class RB():
                     size = action_spec.shape,
                 )
                 state = env.step(action)
+                obs_img =  np.ascontiguousarray(env.physics.render(camera_id=0, height=100, width=100))
                 reward = state.reward or 0.0
                 transition = {
                     "obs" : torch.tensor(obs, device=self.device),
+                    "obs_img" : torch.tensor(obs_img, dtype=torch.float64, device=self.device),
                     "action" : torch.tensor(action, device=self.device),
                     "next_obs" : torch.tensor(flatten_observation(state.observation), device=self.device),
                     "reward" : torch.tensor(reward, device=self.device),
@@ -41,7 +43,12 @@ class RB():
                 }
                 self.experience.add(transition)
                 rewards.append(reward)
-            #self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)
+            self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)
+
+
+    def sample(self, batch_size):
+        batch = self.experience.sample(batch_size)
+        return batch
             
 
 

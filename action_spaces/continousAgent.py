@@ -7,13 +7,18 @@ import numpy as np
 
 
 class SAC:
-    def __init__(self, env, replay_buffer, wandb_run):
+    def __init__(self, env, replay_buffer, latent_dim, wandb_run):
         self.env = env
         self.replay_buffer = replay_buffer.experience
         self.wandb_run = wandb_run
-        self.obs_dim = sum(np.prod(spec.shape) for spec in self.env.observation_spec().values())
         self.action_dim = self.env.action_spec().shape[0]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.train_with_repr = True
+        self.obs_dim = sum(np.prod(spec.shape) for spec in self.env.observation_spec().values())
+        if self.train_with_repr:
+            self.obs_dim = latent_dim
+        else :
+            self.obs_dim = self.obs_dim
         self.policy = GaussianMLP(self.obs_dim, self.action_dim).to(self.device)
         self.qfunctionA = QFunction(self.obs_dim, self.action_dim, 1).to(self.device)
         self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
@@ -27,6 +32,7 @@ class SAC:
         self.target_entropy = -np.prod(self.env.action_spec().shape).item()
         self.tau = 0.001
         self.gamma = 0.99
+
 
   
     def train(self, episodes, max_steps):
@@ -65,15 +71,21 @@ class SAC:
                 # Sample a batch
                 batch = self.replay_buffer.sample(batch_size)
                 states = batch["obs"]
+                states_img  = batch["obs_img"]
                 actions = batch["action"]
                 rewards = batch["reward"]
                 next_states = batch["next_obs"]
+                next_states_img = batch["next_obs_img"]
                 dones = batch["done"]
 
-                s = torch.tensor(states, dtype=torch.float32).to(self.device)
+                if self.train_with_repr:
+                    s = torch.tensor(states, dtype=torch.float32).to(self.device)
+                    s_next = torch.tensor(next_states, dtype=torch.float32).to(self.device)
+                else :
+                    s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
+                    s_next = torch.tensor(next_states_img, dtype=torch.float64, device = self.device)
                 a = torch.tensor(actions, dtype=torch.float32).to(self.device)
                 r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(self.device)
-                s_next = torch.tensor(next_states, dtype=torch.float32).to(self.device)
                 d = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(self.device)
 
                 # Sample actions from current policy at next state

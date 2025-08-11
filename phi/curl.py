@@ -4,8 +4,24 @@ import torch
 from torchvision import transforms
 from PIL import Image
 import matplotlib.pyplot as plt
+from collect_data import RB
 
-class ImgEncoder(torch.nn.Mpdule):
+# lets define a single image as [1, 3, 84, 84, ]
+
+
+class ImgEncoder(torch.nn.Module):
+    def __init__(self, stack_size = 3, ):
+        super().__init__()
+        self.flatten = torch.nn.Flatten()
+        self.encoder = torch.nn.Sequential(
+
+        )
+class CURLWrapper:
+    def __init__(self, replay_buffer):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.storage = replay_buffer
+
+class ImgEncoder(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = torch.nn.Flatten()
@@ -14,7 +30,7 @@ class ImgEncoder(torch.nn.Mpdule):
             torch.nn.ReLU(),
             torch.nn.Linear(512, 512),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 10),
+            torch.nn.Linear(512, 10)
         )
 
     def forward(self, x):
@@ -57,7 +73,7 @@ for img in []:
     proj_key      = blp(key_encoded)
     logits        = torch.matmul(query_encoded, proj_key)
     logits        = logits - max(logits, axis=1)
-    labels        = arange(logits.shape[0])
+    labels        =  torch.arange(logits.shape[0]).long()
     loss = torch.nn.functional.cross_entropy(logits, labels)
     queryEncoderOptim.zero_grad()
     blpOptim.zero_grad()

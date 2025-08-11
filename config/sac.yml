@@ -1,0 +1,7 @@
+method: grid
+metric: 
+  goal : maximize 
+  name : total_reward
+parameters :
+  seed :
+    values : [55, 45, 68]

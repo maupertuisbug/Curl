@@ -4,7 +4,7 @@ import numpy as np
 from dm_control import suite 
 from collect_data import RB
 import wandb
-from sac import SAC
+from action_spaces.continousAgent import SAC
 import torch 
 import torch.nn as nn 
 import wandb 
@@ -45,19 +45,24 @@ def run_exp():
     wandb_run = wandb.init(project="CURL")
     config = wandb.config 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    domain_name = "cheetah"
-    task_name   = "run"
+    domain_name = "reacher"
+    task_name   = "easy"
     seed = config.seed
     env = suite.load(domain_name=domain_name, task_name=task_name, task_kwargs={'random': seed})
-    pixels = env.physics.render(camera_id=0, height=100, width=100)
+    pixels = np.ascontiguousarray(env.physics.render(camera_id=0, height=100, width=100))
+    pstensor = torch.tensor(pixels, dtype=torch.float64).to(device)
     plt.imshow(pixels)
     plt.savefig('test.png')
 
     wandb_run = wandb.init(project="CURL")
     rb = RB(1000000, 32, wandb_run)
-    rb.collect_init(env, 500, 200)
+    rb.collect_init(env, 5000, 1000)
+    data = rb.sample(2)
+    ob = data['obs']
     envw = DMCWrapper(env)
     agent = SAC(envw, rb, wandb_run)
+   # representation_learneer = repr_learner.RepresentationLearner()
+
     agent.train(episodes=1000, max_steps=200)
 
 if __name__ == "__main__":
