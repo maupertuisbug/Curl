@@ -40,3 +40,52 @@ class GaussianMLP(torch.nn.Module):
         
         return action, log_prob, torch.tanh(mean)
 
+
+class GaussianMLPImg(torch.nn.Module):
+
+    def __init__(self, input_channels, output_dim):
+        super().__init__()
+        flatten_size = self.get_output_size((input_channels, 84, 84))
+        self.output_dim = output_dim
+
+        self.conv = torch.nn.Sequential(
+                torch.nn.Conv2d(in_channels = input_channels, out_channels = 32, kernel_size = 8, stride = 4),
+                torch.nn.ReLU(), 
+                torch.nn.Conv2d(in_channels = 32, out_channels = 64, kernel = 4, stride = 2),
+                torch.nn.ReLU(),
+                torch.nn.Conv2d(in_channels = 64, out_channels = 64, kernel = 3, stride = 1),
+                torch.nn.ReLU()
+        )
+
+        self.linear = torch.nn.Sequential(
+                torch.nn.Linear(flatten_size, 512),
+                torch.nn.ReLU(),
+                torch.nn.Linear(512, 2 * output_dim)
+        )
+
+        self.log_min = -10 
+        self.log_max = 2
+        self.conv.apply(init_weights)
+        self.linear.apply(init_weights)
+
+    def forward(self, obs):
+        output = self.conv(obs)
+        output = self.linear(output)
+        mean = output[:, :self.output_dim]
+        log_var = output[:, self.output_dim:]
+        log_var = torch.clamp(log_var, self.log_min, self.log_max)
+        std = torch.exp(log_var)
+
+        # you need to use reparameterization trick
+        normal = torch.distributions.Normal(mean, std)
+        z = normal.rsample()
+        action = torch.tanh(z)
+
+        log_prob = normal.log_prob(z)
+        log_prob = log_prob.sum(dim = -1, keepdim=True)
+        log_prob -= torch.log(1 - action.pow(2) + 1e-6).sum(dim = -1, keepdim=True)
+        
+        return action, log_prob, torch.tanh(mean)
+
+        
+

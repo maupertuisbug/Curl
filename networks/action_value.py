@@ -25,3 +25,38 @@ class QFunction(torch.nn.Module):
         x = torch.cat([obs, action], dim=1)
         x = self.net(x)
         return x
+
+
+class QFuntionImg(torch.nn.Module):
+
+    def __init__(self, input_channels, action_dim):
+        super().__init__()
+        self.action_dim  = action_dim 
+        flatten_size = self.get_output_size((input_channels, 84, 84))
+        self.conv = torch.nn.Sequential(
+                    torch.nn.Conv2d(in_channels = input_channels, out_channels = 32, kernel_size = 8, stride = 4),
+                    torch.nn.ReLU(),
+                    torch.nn.Conv2d(in_channels = 32, out_channels = 64, kernel_size = 4, stride = 2),
+                    torch.nn.ReLU(),
+                    torch.nn.Conv2d(in_channels = 64, out_channels = 64, kernel_size = 3, stride = 1),
+                    torch.nn.ReLU(), 
+                   
+        )
+
+        self.linear = torch.nn.Sequenial(
+                    torch.nn.Linear(flatten_size+action_dim, 512),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(512, 1))
+        
+        self.conv.apply(init_weights)
+        self.linear.apply(init_weights)
+
+    def forward(self, obs, action):
+        x = self.conv(obs)
+        x =  torch.cat([x, action], dim = 1)
+        return x
+    
+
+    
+
+
