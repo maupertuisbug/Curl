@@ -13,29 +13,23 @@ def flatten_observation(obs_dict):
 class SAC:
     def __init__(self, env, replay_buffer, latent_dim, wandb_run, encoder):
         self.env = env
-        self.replay_buffer = replay_buffer.experience
+        self.replay_buffer = replay_buffer
         self.wandb_run = wandb_run
         self.action_dim = self.env.action_spec().shape[0]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.train_with_repr = True
         if self.train_with_repr:
-            self.obs_dim = latent_dim
-            self.encoder = encoder
-            self.policy = GaussianMLPImg(input_channels = 9, output_dim = self.action_dim).to(self.device)
-            self.qfunctionA = QFunctionImg(input_channels = 9, output_dim = self.action_dim).to(self.device)
-            self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
-            self.qfunctionB = QFunctionImg(input_channels = 9, output_dim = self.action_dim).to(self.device)
-            self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
-            
-
+            in_ch = 9
         else :
-            self.obs_dim = latent_dim
-            self.encoder = encoder
-            self.policy = GaussianMLPImg(input_channels = 3, output_dim = self.action_dim).to(self.device)
-            self.qfunctionA = QFunctionImg(input_channels = 3, output_dim = self.action_dim).to(self.device)
-            self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
-            self.qfunctionB = QFunctionImg(input_channels = 3, output_dim = self.action_dim).to(self.device)
-            self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
+            in_ch = 3
+        
+        self.obs_dim = latent_dim
+        self.encoder = encoder
+        self.policy = GaussianMLPImg(input_channels = in_ch, output_dim = self.action_dim).to(self.device)
+        self.qfunctionA = QFunctionImg(input_channels = in_ch, action_dim = self.action_dim).to(self.device)
+        self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
+        self.qfunctionB = QFunctionImg(input_channels = in_ch, action_dim = self.action_dim).to(self.device)
+        self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
         
         self.log_alpha = torch.tensor(0.0, requires_grad=True)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=0.001)
@@ -59,16 +53,16 @@ class SAC:
         for ep in range(episodes):
             state = self.env.reset()
             obs_img = np.ascontiguousarray(self.env.physics.render(camera_id = 0, height=100, width = 100))
-            state = torch.tensor(state, dtype=torch.float32).to(self.device)
+            state = torch.tensor(flatten_observation(state.observation), dtype=torch.float32).to(self.device)
             total_reward = 0
             for _ in range(max_steps):
-
+                with torch.no_grad():
+                    action, _, _ = self.policy(state.unsqueeze(0))  # [1, action_dim]
+                    action = action.squeeze(0).cpu().numpy()
                 for _ in range(frame_skip):
-                    with torch.no_grad():
-                        action, _, _ = self.policy(state.unsqueeze(0))  # [1, action_dim]
-                        action = action.squeeze(0).cpu().numpy()
                     next_state, reward, done, _ = self.env.step(action)
                     next_state_tensor = torch.tensor(next_state, dtype=torch.float32).to(self.device)
+
                     transition = {
                         "obs" : torch.tensor(state, device=self.device),
                         "action" : torch.tensor(action, device=self.device),

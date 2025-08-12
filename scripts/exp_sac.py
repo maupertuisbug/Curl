@@ -4,7 +4,7 @@ import numpy as np
 from dm_control import suite 
 from collect_data import RB
 import wandb
-from action_spaces.continousAgent import SAC
+from action_spaces.continousAgentImgObs import SAC
 import torch 
 import torch.nn as nn 
 import wandb 
@@ -14,6 +14,7 @@ import pickle
 import gymnasium as gym 
 import numpy as np
 import matplotlib.pyplot as plt
+from phi.curl import CURLWrapper
 
 class DMCWrapper:
     def __init__(self, env):
@@ -59,8 +60,9 @@ def run_exp():
     rb.collect_init(env, 5, 100)
     data = rb.sample(2)
     ob = data['obs_img']
-    envw = DMCWrapper(env)
-    agent = SAC(envw, rb, wandb_run)
+    # envw = DMCWrapper(env)
+    curl = CURLWrapper(rb)
+    agent = SAC(env, rb, 25, wandb_run, curl)
    # representation_learneer = repr_learner.RepresentationLearner()
 
     agent.train(episodes=1000, max_steps=200)

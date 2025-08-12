@@ -13,19 +13,19 @@ from collect_data import RB
 
 
 class ImgEncoder(torch.nn.Module):
-    def __init__(self, laten_dim = 25):
+    def __init__(self, latent_dim = 25):
         super().__init__()
         self.flatten = torch.nn.Flatten()
         self.encoder = torch.nn.Sequential(
-            torch.nn.Conv2d(input_channels=9, out_channels=32, kernel_size=8, stride=4),
+            torch.nn.Conv2d(in_channels=9, out_channels=32, kernel_size=8, stride=4),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(input_channels=32, out_channels=64, kernel_size=4, stride=2),
+            torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(input_channels=64, out_channels=64, kernel_size= 3, stride=1),
+            torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size= 3, stride=1),
             torch.nn.ReLU(),
         )
         self.output_dim = self.get_output_size((9, 84, 84))    # stack of 3 images
-        self.linear = torch.nn.Linear(self.output_dim, laten_dim)
+        self.linear = torch.nn.Linear(self.output_dim, latent_dim)
 
     def forward(self, x):
         x = self.encoder(x)
@@ -34,7 +34,7 @@ class ImgEncoder(torch.nn.Module):
         return x
 
     def get_output_size(self, shape):
-        x_out = self.conv(torch.zeros(1, *shape))
+        x_out = self.encoder(torch.zeros(1, *shape))
         x_out = torch.tensor(x_out.shape[1:])
         return int(torch.prod(x_out))
 
@@ -54,7 +54,7 @@ class CURLWrapper:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.storage = replay_buffer
         self.stack_size = stack_size
-        self.keyencoder = ImgEncoder(latent_dim = 25)
+        self.keyEncoder = ImgEncoder(latent_dim = 25)
         self.queryEncoder = ImgEncoder(latent_dim = 25)
         self.queryEncoderOptim = torch.optim.Adam(self.queryEncoder.parameters(), lr = 0.002)
         self.keyEncoderOptim = torch.optim.Adam(self.keyEncoder.parameters(), lr = 0.002)
@@ -63,9 +63,6 @@ class CURLWrapper:
 
     def preprocess(self, batch):    # a batch of dataset, 
         obs = batch['obs_img']
-        assert obs.shape[0]%3 == 0
-        batch_size = obs.shape[0]
-        obs = obs.view(-1, self.stack_size , 100, 100, 3)
         b, s, h, w, c, = obs.shape
         obs = obs.permute(0, 1, 4, 2, 3)
         obs = obs.reshape(b, s*c, h, w)

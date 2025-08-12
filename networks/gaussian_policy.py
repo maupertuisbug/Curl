@@ -45,18 +45,17 @@ class GaussianMLPImg(torch.nn.Module):
 
     def __init__(self, input_channels, output_dim):
         super().__init__()
-        flatten_size = self.get_output_size((input_channels, 84, 84))
         self.output_dim = output_dim
 
         self.conv = torch.nn.Sequential(
                 torch.nn.Conv2d(in_channels = input_channels, out_channels = 32, kernel_size = 8, stride = 4),
                 torch.nn.ReLU(), 
-                torch.nn.Conv2d(in_channels = 32, out_channels = 64, kernel = 4, stride = 2),
+                torch.nn.Conv2d(in_channels = 32, out_channels = 64, kernel_size = 4, stride = 2),
                 torch.nn.ReLU(),
-                torch.nn.Conv2d(in_channels = 64, out_channels = 64, kernel = 3, stride = 1),
+                torch.nn.Conv2d(in_channels = 64, out_channels = 64, kernel_size = 3, stride = 1),
                 torch.nn.ReLU()
         )
-
+        flatten_size = self.get_output_size((input_channels, 84, 84))
         self.linear = torch.nn.Sequential(
                 torch.nn.Linear(flatten_size, 512),
                 torch.nn.ReLU(),
@@ -86,6 +85,11 @@ class GaussianMLPImg(torch.nn.Module):
         log_prob -= torch.log(1 - action.pow(2) + 1e-6).sum(dim = -1, keepdim=True)
         
         return action, log_prob, torch.tanh(mean)
+
+    def get_output_size(self, shape):
+        x_out = self.conv(torch.zeros(1, *shape))
+        x_out = torch.tensor(x_out.shape[1:])
+        return int(torch.prod(x_out))
 
         
 
