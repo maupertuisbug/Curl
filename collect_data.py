@@ -23,6 +23,7 @@ class RB():
         for ep in range(episodes):
             rewards = []
             state = env.reset()
+            obs_img =  np.ascontiguousarray(env.physics.render(camera_id=0, height=100, width=100))
             for step in range(max_steps):
                 obs = flatten_observation(state.observation)
                 action = np.random.uniform(
@@ -31,16 +32,20 @@ class RB():
                     size = action_spec.shape,
                 )
                 state = env.step(action)
-                obs_img =  np.ascontiguousarray(env.physics.render(camera_id=0, height=100, width=100))
+                next_obs = flatten_observation(state.observation)
+                next_obs_img = np.ascontiguousarray(env.physics.render(camera_id=0, height=100, width=100))
+                
                 reward = state.reward or 0.0
                 transition = {
                     "obs" : torch.tensor(obs, device=self.device),
                     "obs_img" : torch.tensor(obs_img, dtype=torch.float64, device=self.device),
                     "action" : torch.tensor(action, device=self.device),
-                    "next_obs" : torch.tensor(flatten_observation(state.observation), device=self.device),
+                    "next_obs" : torch.tensor(next_obs, device=self.device),
+                    "next_obs_img" : torch.tensor(next_obs_img, dtype=torch.float64, device=self.device),
                     "reward" : torch.tensor(reward, device=self.device),
                     "done"  : torch.tensor(int(state.last()), device=self.device)
                 }
+                obs_img = next_obs_img
                 self.experience.add(transition)
                 rewards.append(reward)
             self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)

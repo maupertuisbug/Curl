@@ -56,9 +56,9 @@ def run_exp():
 
     wandb_run = wandb.init(project="CURL")
     rb = RB(1000000, 32, wandb_run)
-    rb.collect_init(env, 5000, 1000)
+    rb.collect_init(env, 5, 100)
     data = rb.sample(2)
-    ob = data['obs']
+    ob = data['obs_img']
     envw = DMCWrapper(env)
     agent = SAC(envw, rb, wandb_run)
    # representation_learneer = repr_learner.RepresentationLearner()
