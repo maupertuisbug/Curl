@@ -20,9 +20,9 @@ class SAC:
         self.train_with_repr = True
         self.obs_dim = sum(np.prod(spec.shape) for spec in self.env.observation_spec().values())
         self.policy = GaussianMLP(self.obs_dim, self.action_dim).to(self.device)
-        self.qfunctionA = QFunction(self.obs_dim, self.action_dim, 1).to(self.device)
+        self.qfunctionA = QFunction(self.obs_dim, self.action_dim).to(self.device)
         self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
-        self.qfunctionB = QFunction(self.obs_dim, self.action_dim, 1).to(self.device)
+        self.qfunctionB = QFunction(self.obs_dim, self.action_dim).to(self.device)
         self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
         self.log_alpha = torch.tensor(0.0, requires_grad=True)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=0.001)

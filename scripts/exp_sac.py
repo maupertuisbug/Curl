@@ -64,8 +64,7 @@ def run_exp():
     curl = CURLWrapper(rb)
     agent = SAC(env, rb, 25, wandb_run, curl)
    # representation_learneer = repr_learner.RepresentationLearner()
-
-    agent.train(episodes=1000, max_steps=200)
+    agent.train(episodes=10, max_steps=200)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

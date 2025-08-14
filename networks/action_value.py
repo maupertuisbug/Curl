@@ -7,17 +7,16 @@ def init_weights(m):
 
 class QFunction(torch.nn.Module):
 
-    def __init__(self, obs_dim, action_dim, output_dim):
+    def __init__(self, obs_dim, action_dim):
         super().__init__()
         self.obs_dim = obs_dim 
         self.action_dim = action_dim 
-        self.output_dim = output_dim
         self.net = torch.nn.Sequential(
                     torch.nn.Linear(self.obs_dim+self.action_dim, 128),
                     torch.nn.ReLU(),
                     torch.nn.Linear(128, 128),
                     torch.nn.ReLU(),
-                    torch.nn.Linear(128, self.output_dim)
+                    torch.nn.Linear(128, 1)
         )
         self.net.apply(init_weights)
 
@@ -54,7 +53,7 @@ class QFunctionImg(torch.nn.Module):
         self.linear.apply(init_weights)
 
     def forward(self, obs, action):
-        x = self.conv(obs)
+        x = torch.flatten(self.conv(obs.float()/255.0), dim=1)
         x =  torch.cat([x, action], dim = 1)
         return x
 

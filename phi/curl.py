@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 from collect_data import RB
 
 # lets define a single image as [1, 3, 84, 84, ]
-
+def init_weights(m):
+    if isinstance(m, torch.nn.Linear):
+        torch.nn.init.xavier_uniform_(m.weight)
+        torch.nn.init.zeros_(m.bias)
 
 
 
@@ -26,9 +29,11 @@ class ImgEncoder(torch.nn.Module):
         )
         self.output_dim = self.get_output_size((9, 84, 84))    # stack of 3 images
         self.linear = torch.nn.Linear(self.output_dim, latent_dim)
+        self.encoder.apply(init_weights)
+        self.linear.apply(init_weights)
 
     def forward(self, x):
-        x = self.encoder(x)
+        x = torch.flatten(self.encoder(x.float() / 255.0), start_dim=1)
         x = self.linear(x)
         x = torch.nn.functional.relu(x)
         return x
@@ -54,19 +59,28 @@ class CURLWrapper:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.storage = replay_buffer
         self.stack_size = stack_size
-        self.keyEncoder = ImgEncoder(latent_dim = 25)
-        self.queryEncoder = ImgEncoder(latent_dim = 25)
+        self.keyEncoder = ImgEncoder(latent_dim = 25).to(self.device)
+        self.queryEncoder = ImgEncoder(latent_dim = 25).to(self.device)
         self.queryEncoderOptim = torch.optim.Adam(self.queryEncoder.parameters(), lr = 0.002)
         self.keyEncoderOptim = torch.optim.Adam(self.keyEncoder.parameters(), lr = 0.002)
-        self.blp  = BilinearProd(latent_dim=25)
+        self.blp  = BilinearProd(latent_dim=25).to(self.device)
         self.blpOptim  = torch.optim.Adam(self.blp.parameters(), lr = 0.001)
 
-    def preprocess(self, batch):    # a batch of dataset, 
+    def preprocess_batch(self, batch):    # a batch of dataset, 
         obs = batch['obs_img']
         b, s, h, w, c, = obs.shape
         obs = obs.permute(0, 1, 4, 2, 3)
         obs = obs.reshape(b, s*c, h, w)
         return obs
+    
+    def preprocess(self, obs):
+        b, s, h, w, c, = obs.shape
+        obs = obs.permute(0, 1, 4, 2, 3)
+        obs = obs.reshape(b, s*c, h, w)
+        return obs
+
+    def encode(self,  x):
+        return self.queryEncoder(x)
 
     def train_repr(self, epochs, batch_size):
         tf = transforms.RandomResizedCrop([84,84], scale=(0.8, 0.84), ratio=(0.85, 0.89))

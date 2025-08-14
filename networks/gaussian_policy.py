@@ -65,10 +65,11 @@ class GaussianMLPImg(torch.nn.Module):
         self.log_min = -10 
         self.log_max = 2
         self.conv.apply(init_weights)
+
         self.linear.apply(init_weights)
 
     def forward(self, obs):
-        output = self.conv(obs)
+        output = torch.flatten(self.conv(obs.float()/255.0), start_dim=1)
         output = self.linear(output)
         mean = output[:, :self.output_dim]
         log_var = output[:, self.output_dim:]

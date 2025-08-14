@@ -80,7 +80,9 @@ class RB():
                         rewards.append(reward)
 
                 obs_list = []
-                next_obs_list = []  
+                next_obs_list = []
+                obs_img_list = [] 
+                next_obs_img_list = [] 
             self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)
 
 

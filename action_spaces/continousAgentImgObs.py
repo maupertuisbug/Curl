@@ -4,10 +4,15 @@ from networks.action_value import QFunction, QFunctionImg
 import copy
 import torch.nn.functional as F
 import numpy as np
+from torchvision import transforms
 
 def flatten_observation(obs_dict):
 
     return np.concatenate([v.ravel() for v in obs_dict.values()])
+
+
+def valid(l1, l2, l3, l4, size):
+    return len(l1) == len(l2) == len(l3) == len(l4) == size 
 
 
 class SAC:
@@ -19,17 +24,22 @@ class SAC:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.train_with_repr = True
         if self.train_with_repr:
-            in_ch = 9
+            self.obs_dim = latent_dim 
+            self.encoder = encoder 
+            self.policy = GaussianMLP(self.obs_dim, self.action_dim).to(self.device)
+            self.qfunctionA = QFunction(self.obs_dim, self.action_dim).to(self.device)
+            self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
+            self.qfunctionB = QFunction(self.obs_dim, self.action_dim).to(self.device)
+            self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
         else :
             in_ch = 3
-        
-        self.obs_dim = latent_dim
-        self.encoder = encoder
-        self.policy = GaussianMLPImg(input_channels = in_ch, output_dim = self.action_dim).to(self.device)
-        self.qfunctionA = QFunctionImg(input_channels = in_ch, action_dim = self.action_dim).to(self.device)
-        self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
-        self.qfunctionB = QFunctionImg(input_channels = in_ch, action_dim = self.action_dim).to(self.device)
-        self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
+            self.obs_dim = latent_dim
+            self.encoder = encoder
+            self.policy = GaussianMLPImg(input_channels = in_ch, output_dim = self.action_dim).to(self.device)
+            self.qfunctionA = QFunctionImg(input_channels = in_ch, action_dim = self.action_dim).to(self.device)
+            self.qfunctionAtarget = copy.deepcopy(self.qfunctionA).to(self.device)
+            self.qfunctionB = QFunctionImg(input_channels = in_ch, action_dim = self.action_dim).to(self.device)
+            self.qfunctionBtarget = copy.deepcopy(self.qfunctionB).to(self.device)
         
         self.log_alpha = torch.tensor(0.0, requires_grad=True)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=0.001)
@@ -45,68 +55,137 @@ class SAC:
     def train(self, episodes, max_steps):
         batch_size = 32
         rewardsl = []
+        tf = transforms.RandomResizedCrop([84,84], scale=(0.8, 0.84), ratio=(0.85, 0.89))
         if self.train_with_repr:
             frame_skip = 3
         else :
             frame_skip  = 1
 
         for ep in range(episodes):
+            
             state = self.env.reset()
             obs_img = np.ascontiguousarray(self.env.physics.render(camera_id = 0, height=100, width = 100))
-            state = torch.tensor(flatten_observation(state.observation), dtype=torch.float32).to(self.device)
+            
             total_reward = 0
-            for _ in range(max_steps):
+            obs_img_list = []
+
+            for _ in range(frame_skip) :
+                obs_img_list.append(torch.tensor(obs_img, device = self.device))
+            
+            if frame_skip > 1:
                 with torch.no_grad():
-                    action, _, _ = self.policy(state.unsqueeze(0))  # [1, action_dim]
+                    encoded_img = self.encoder.preprocess(torch.stack(obs_img_list).unsqueeze(0))
+                    encoded_img = tf(encoded_img).to(self.device)
+                    encoded_img = self.encoder.encode(encoded_img)
+                    action, _, _  = self.policy(encoded_img)
                     action = action.squeeze(0).cpu().numpy()
+            else :
+                with torch.no_grad():
+                    action, _, _ = self.policy(torch.stack(obs_img_list))
+                    action = action.squeeze(0).cpu().numpy()
+
+            
+            obs_img_list = [] 
+            next_obs_img_list = []
+            obs_list = []
+            next_obs_list = []
+            for _ in range(max_steps-1):
+                reward = 0
                 for _ in range(frame_skip):
-                    next_state, reward, done, _ = self.env.step(action)
-                    next_state_tensor = torch.tensor(next_state, dtype=torch.float32).to(self.device)
+                    
+                    obs_img_list.append(torch.tensor(obs_img, device = self.device))
+                    obs = flatten_observation(state.observation)
+                    obs_list.append(torch.tensor(obs))
 
-                    transition = {
-                        "obs" : torch.tensor(state, device=self.device),
-                        "action" : torch.tensor(action, device=self.device),
-                        "next_obs" : torch.tensor(next_state_tensor, device=self.device),
-                        "reward" : torch.tensor(reward, device=self.device), 
-                        "done" : torch.tensor(int(done), device=self.device)
+                    state = self.env.step(action)
 
-                    }
-                    self.replay_buffer.add(transition)
-                    state = next_state_tensor
-                    total_reward += reward
+                    next_obs = flatten_observation(state.observation)
+                    next_obs_list.append(torch.tensor(next_obs))
+                    next_obs_img =np.ascontiguousarray(self.env.physics.render(camera_id = 0, height=100, width = 100))
+                    next_obs_img_list.append(torch.tensor(next_obs_img, device = self.device))
 
-                    # Start updates after buffer fills
-                    if len(self.replay_buffer) < batch_size:
-                        continue
+                    reward = reward + (state.reward or 0.0)
+                    obs_img = next_obs_img
+                    done = state.last()
+                
+                if frame_skip > 1 :
 
-                    # Sample a batch
-                    batch = self.replay_buffer.sample(batch_size)
-                    states = batch["obs"]
-                    states_img  = batch["obs_img"]
-                    actions = batch["action"]
-                    rewards = batch["reward"]
-                    next_states = batch["next_obs"]
-                    next_states_img = batch["next_obs_img"]
-                    dones = batch["done"]
+                    if valid(obs_list, obs_img_list, next_obs_list, next_obs_img_list, frame_skip):
+                        transition = {
+                            "obs" : torch.stack(obs_list).to(self.device),
+                            "obs_img" : torch.stack(obs_img_list).to(self.device),
+                            "action" : torch.tensor(action, device=self.device),
+                            "next_obs" : torch.stack(next_obs_list).to(self.device),
+                            "next_obs_img" : torch.stack(next_obs_img_list).to(self.device),
+                            "reward" : torch.tensor(reward, device=self.device),
+                            "done"  : torch.tensor(int(state.last()), device=self.device)
+                        }
+                        self.replay_buffer.add(transition)
+                        with torch.no_grad():
+                            encoded_img = self.encoder.preprocess(torch.stack(obs_img_list))
+                            encoded_img = self.encoder.encode(encoded_img)
+                            action, _, _ = self.policy(encoded_img) 
+                            action = action.squeeze(0).cpu().numpy()
 
-                    if self.train_with_repr:
-                        s = torch.tensor(states, dtype=torch.float32).to(self.device)
-                        s_next = torch.tensor(next_states, dtype=torch.float32).to(self.device)
-                    else :
-                        s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
-                        s_next = torch.tensor(next_states_img, dtype=torch.float64, device = self.device)
-                    a = torch.tensor(actions, dtype=torch.float32).to(self.device)
-                    r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(self.device)
-                    d = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(self.device)
+                    
+                else :
+                    if valid(obs_list, obs_img_list, next_obs_list, next_obs_img_list, frame_skip):
+                        transition = {
+                            "obs" : torch.stack(obs_list).squeeze(0).to(self.device),
+                            "obs_img" : torch.stack(obs_img_list).squeeze(0).to(self.device),
+                            "action" : torch.tensor(action, device=self.device),
+                            "next_obs" : torch.stack(next_obs_list).squeeze(0).to(self.device),
+                            "next_obs_img" : torch.stack(next_obs_img_list).squeeze(0).to(self.device),
+                            "reward" : torch.tensor(reward, device=self.device),
+                            "done"  : torch.tensor(int(state.last()), device=self.device)
+                        }
+                        self.replay_buffer.add(transition)
+                        total_reward += reward
+                        with torch.no_grad():
+                            action, _, _ = self.policy(obs_img.unsqueeze(0)) 
+                            action = action.squeeze(0).cpu().numpy()
 
-                    # Sample actions from current policy at next state
-                    with torch.no_grad():
-                        next_action, log_prob_next_action, _ = self.policy(s_next)
-                        q1_next = self.qfunctionAtarget(s_next, next_action)
-                        q2_next = self.qfunctionBtarget(s_next, next_action)
-                        min_q_next = torch.min(q1_next, q2_next)
-                        alpha = self.log_alpha.exp()
-                        target_q = r + self.gamma * (1 - d) * (min_q_next - alpha * log_prob_next_action)
+
+                obs_list = []
+                next_obs_list = []
+                obs_img_list = [] 
+                next_obs_img_list = [] 
+                
+                # Start updates after buffer fills
+                if len(self.replay_buffer) < batch_size:
+                    continue
+
+                # Sample a batch
+                batch = self.replay_buffer.sample(batch_size)
+                states = batch["obs"]
+                states_img  = batch["obs_img"]
+                actions = batch["action"]
+                rewards = batch["reward"]
+                next_states = batch["next_obs"]
+                next_states_img = batch["next_obs_img"]
+                dones = batch["done"]
+
+                if self.train_with_repr:
+                    s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
+                    s = self.encoder(s)
+                    s_next = torch.tensor(next_states_img, dtype=torch.float64, device = self.device)
+                    s_next = self.encoder(s_next)
+                else :
+                    s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
+                    s_next = torch.tensor(next_states_img, dtype=torch.float64, device = self.device)
+                
+                a = torch.tensor(actions, dtype=torch.float32).to(self.device)
+                r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(self.device)
+                d = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(self.device)
+
+                # Sample actions from current policy at next state
+                with torch.no_grad():
+                    next_action, log_prob_next_action, _ = self.policy(s_next)
+                    q1_next = self.qfunctionAtarget(s_next, next_action)
+                    q2_next = self.qfunctionBtarget(s_next, next_action)
+                    min_q_next = torch.min(q1_next, q2_next)
+                    alpha = self.log_alpha.exp()
+                    target_q = r + self.gamma * (1 - d) * (min_q_next - alpha * log_prob_next_action)
 
                     # Q-function A update
                     q1 = self.qfunctionA(s, a)
@@ -149,8 +228,8 @@ class SAC:
                             target_param.data.mul_(1 - self.tau)
                             target_param.data.add_(self.tau * param.data)
 
-                    if done:
-                        break
+                if done:
+                    break 
                 rewardsl.append(total_reward)  
                 self.wandb_run.log({'average reward' : np.mean(rewardsl)}, step = ep)
 
