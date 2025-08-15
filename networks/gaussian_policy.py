@@ -55,12 +55,12 @@ class GaussianMLPImg(torch.nn.Module):
                 torch.nn.Conv2d(in_channels = 64, out_channels = 64, kernel_size = 3, stride = 1),
                 torch.nn.ReLU()
         )
-        flatten_size = self.get_output_size((input_channels, 84, 84))
+        flatten_size = self.get_output_size((input_channels, 100, 100))
         self.linear = torch.nn.Sequential(
-                torch.nn.Linear(flatten_size, 512),
+                torch.nn.Linear(flatten_size, 128),
                 torch.nn.ReLU(),
-                torch.nn.Linear(512, 2 * output_dim)
-        )
+                torch.nn.Linear(128, 2 * output_dim))
+
 
         self.log_min = -10 
         self.log_max = 2

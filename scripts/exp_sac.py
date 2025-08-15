@@ -57,14 +57,15 @@ def run_exp():
 
     wandb_run = wandb.init(project="CURL")
     rb = RB(1000000, 32, wandb_run)
-    rb.collect_init(env, 5, 100)
+    train_with_curl = False
+    rb.collect_init(env, 10, 1000, train_with_curl)
     data = rb.sample(2)
     ob = data['obs_img']
     # envw = DMCWrapper(env)
     curl = CURLWrapper(rb)
     agent = SAC(env, rb, 25, wandb_run, curl)
-   # representation_learneer = repr_learner.RepresentationLearner()
-    agent.train(episodes=10, max_steps=200)
+    curl.train_repr(10, 32)
+    agent.train(episodes=600, max_steps=1000)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

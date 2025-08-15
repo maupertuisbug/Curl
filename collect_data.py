@@ -1,6 +1,7 @@
 import torch 
 import numpy as np
-from torchrl.data import ReplayBuffer, ListStorage
+from torchrl.data import ReplayBuffer, ListStorage, TensorDictReplayBuffer
+from tensordict import TensorDict
 
 torch.manual_seed(0)
 
@@ -11,16 +12,19 @@ def flatten_observation(obs_dict):
 
 class RB():
     def __init__(self, max_size, batch_size, wandb_run):
-        self.experience = ReplayBuffer(
+        self.experience = TensorDictReplayBuffer(
             storage=ListStorage(max_size=max_size), batch_size = batch_size)
         self.wandb_run = wandb_run
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def collect_init(self, env, episodes, max_steps):
+    def collect_init(self, env, episodes, max_steps, train_with_curl):
         
         action_spec = env.action_spec()
         obs_spec = env.observation_spec()
-        frame_skip = 1
+        if train_with_curl :
+            frame_skip = 3
+        else :
+            frame_skip = 1
         for ep in range(episodes):
             rewards = []
             state = env.reset()
@@ -52,7 +56,7 @@ class RB():
                     obs_img = next_obs_img
                 if frame_skip > 1 : 
                     if len(obs_list) == frame_skip and len(next_obs_list) == frame_skip and len(obs_img_list) == frame_skip and len(next_obs_img_list) == frame_skip:
-                        transition = {
+                        transition = TensorDict({
                             "obs" : torch.stack(obs_list).to(self.device),
                             "obs_img" : torch.stack(obs_img_list).to(self.device),
                             "action" : torch.tensor(action, device=self.device),
@@ -60,13 +64,13 @@ class RB():
                             "next_obs_img" : torch.stack(next_obs_img_list).to(self.device),
                             "reward" : torch.tensor(reward, device=self.device),
                             "done"  : torch.tensor(int(state.last()), device=self.device)
-                        }
+                        }, batch_size=[])
                     
                         self.experience.add(transition)
                         rewards.append(reward)
                 else :
                     if len(obs_list) == frame_skip and len(next_obs_list) == frame_skip and len(obs_img_list) == frame_skip and len(next_obs_img_list) == frame_skip:
-                        transition = {
+                        transition = TensorDict({
                             "obs" : torch.stack(obs_list).squeeze(0).to(self.device),
                             "obs_img" : torch.stack(obs_img_list).squeeze(0).to(self.device),
                             "action" : torch.tensor(action, device=self.device),
@@ -74,7 +78,7 @@ class RB():
                             "next_obs_img" : torch.stack(next_obs_img_list).squeeze(0).to(self.device),
                             "reward" : torch.tensor(reward, device=self.device),
                             "done"  : torch.tensor(int(state.last()), device=self.device)
-                        }
+                        }, batch_size=[])
                     
                         self.experience.add(transition)
                         rewards.append(reward)
@@ -83,7 +87,7 @@ class RB():
                 next_obs_list = []
                 obs_img_list = [] 
                 next_obs_img_list = [] 
-            self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)
+            # self.wandb_run.log({'Init Data' : np.mean(rewards)}, step = ep)
 
 
     def sample(self, batch_size):

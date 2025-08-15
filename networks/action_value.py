@@ -43,17 +43,17 @@ class QFunctionImg(torch.nn.Module):
                     torch.nn.ReLU(), 
                    
         )
-        flatten_size = self.get_output_size((input_channels, 84, 84))        
+        flatten_size = self.get_output_size((input_channels, 100, 100))        
         self.linear = torch.nn.Sequential(
-                    torch.nn.Linear(flatten_size+action_dim, 512),
+                    torch.nn.Linear(flatten_size+action_dim, 128),
                     torch.nn.ReLU(),
-                    torch.nn.Linear(512, 1))
+                    torch.nn.Linear(128, 1))
         
         self.conv.apply(init_weights)
         self.linear.apply(init_weights)
 
     def forward(self, obs, action):
-        x = torch.flatten(self.conv(obs.float()/255.0), dim=1)
+        x = torch.flatten(self.conv(obs.float()/255.0), start_dim=1)
         x =  torch.cat([x, action], dim = 1)
         return x
 

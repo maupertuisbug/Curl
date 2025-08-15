@@ -5,6 +5,7 @@ import copy
 import torch.nn.functional as F
 import numpy as np
 from torchvision import transforms
+from tensordict import TensorDict
 
 def flatten_observation(obs_dict):
 
@@ -18,11 +19,11 @@ def valid(l1, l2, l3, l4, size):
 class SAC:
     def __init__(self, env, replay_buffer, latent_dim, wandb_run, encoder):
         self.env = env
-        self.replay_buffer = replay_buffer
+        self.replay_buffer = replay_buffer.experience
         self.wandb_run = wandb_run
         self.action_dim = self.env.action_spec().shape[0]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.train_with_repr = True
+        self.train_with_repr = False
         if self.train_with_repr:
             self.obs_dim = latent_dim 
             self.encoder = encoder 
@@ -81,7 +82,7 @@ class SAC:
                     action = action.squeeze(0).cpu().numpy()
             else :
                 with torch.no_grad():
-                    action, _, _ = self.policy(torch.stack(obs_img_list))
+                    action, _, _ = self.policy(torch.stack(obs_img_list).permute(0, 3, 1, 2))
                     action = action.squeeze(0).cpu().numpy()
 
             
@@ -89,7 +90,9 @@ class SAC:
             next_obs_img_list = []
             obs_list = []
             next_obs_list = []
-            for _ in range(max_steps-1):
+            for sp in range(max_steps-1):
+                if self.train_with_repr:
+                    self.encoder.train_repr(1,32)
                 reward = 0
                 for _ in range(frame_skip):
                     
@@ -111,7 +114,7 @@ class SAC:
                 if frame_skip > 1 :
 
                     if valid(obs_list, obs_img_list, next_obs_list, next_obs_img_list, frame_skip):
-                        transition = {
+                        transition = TensorDict({
                             "obs" : torch.stack(obs_list).to(self.device),
                             "obs_img" : torch.stack(obs_img_list).to(self.device),
                             "action" : torch.tensor(action, device=self.device),
@@ -119,18 +122,19 @@ class SAC:
                             "next_obs_img" : torch.stack(next_obs_img_list).to(self.device),
                             "reward" : torch.tensor(reward, device=self.device),
                             "done"  : torch.tensor(int(state.last()), device=self.device)
-                        }
+                        }, batch_size=[])
                         self.replay_buffer.add(transition)
                         with torch.no_grad():
-                            encoded_img = self.encoder.preprocess(torch.stack(obs_img_list))
+                            encoded_img = self.encoder.preprocess(torch.stack(obs_img_list).unsqueeze(0))
+                            encoded_img = tf(encoded_img).to(self.device)
                             encoded_img = self.encoder.encode(encoded_img)
-                            action, _, _ = self.policy(encoded_img) 
+                            action, _, _  = self.policy(encoded_img)
                             action = action.squeeze(0).cpu().numpy()
 
                     
                 else :
                     if valid(obs_list, obs_img_list, next_obs_list, next_obs_img_list, frame_skip):
-                        transition = {
+                        transition = TensorDict({
                             "obs" : torch.stack(obs_list).squeeze(0).to(self.device),
                             "obs_img" : torch.stack(obs_img_list).squeeze(0).to(self.device),
                             "action" : torch.tensor(action, device=self.device),
@@ -138,11 +142,11 @@ class SAC:
                             "next_obs_img" : torch.stack(next_obs_img_list).squeeze(0).to(self.device),
                             "reward" : torch.tensor(reward, device=self.device),
                             "done"  : torch.tensor(int(state.last()), device=self.device)
-                        }
+                        },batch_size=[])
                         self.replay_buffer.add(transition)
                         total_reward += reward
                         with torch.no_grad():
-                            action, _, _ = self.policy(obs_img.unsqueeze(0)) 
+                            action, _, _ = self.policy(torch.stack(obs_img_list).permute(0, 3, 1, 2))
                             action = action.squeeze(0).cpu().numpy()
 
 
@@ -167,12 +171,17 @@ class SAC:
 
                 if self.train_with_repr:
                     s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
-                    s = self.encoder(s)
-                    s_next = torch.tensor(next_states_img, dtype=torch.float64, device = self.device)
-                    s_next = self.encoder(s_next)
+                    s = self.encoder.preprocess(s)
+                    s = tf(s).to(self.device)
+                    s = self.encoder.encode(s)
+
+                    s_next = torch.tensor(next_states_img, dtype = torch.float64, device = self.device)
+                    s_next = self.encoder.preprocess(s_next)
+                    s_next = tf(s_next).to(self.device)
+                    s_next = self.encoder.encode(s_next)
                 else :
-                    s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
-                    s_next = torch.tensor(next_states_img, dtype=torch.float64, device = self.device)
+                    s = torch.tensor(states_img.permute(0, 3, 1, 2), dtype=torch.float64, device = self.device)
+                    s_next = torch.tensor(next_states_img.permute(0, 3, 1, 2), dtype=torch.float64, device = self.device)
                 
                 a = torch.tensor(actions, dtype=torch.float32).to(self.device)
                 r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(self.device)
@@ -187,38 +196,39 @@ class SAC:
                     alpha = self.log_alpha.exp()
                     target_q = r + self.gamma * (1 - d) * (min_q_next - alpha * log_prob_next_action)
 
-                    # Q-function A update
-                    q1 = self.qfunctionA(s, a)
-                    q1_loss = F.mse_loss(q1, target_q.detach())
-                    self.qfunctionA_optimizer.zero_grad()
-                    q1_loss.backward()
-                    self.qfunctionA_optimizer.step()
+                # Q-function A update
+                q1 = self.qfunctionA(s, a)
+                q1_loss = F.mse_loss(q1, target_q.detach())
+                self.qfunctionA_optimizer.zero_grad()
+                q1_loss.backward(retain_graph=True)
+                self.qfunctionA_optimizer.step()
 
-                    # Q-function B update
-                    q2 = self.qfunctionB(s, a)
-                    q2_loss = F.mse_loss(q2, target_q.detach())
-                    self.qfunctionB_optimizer.zero_grad()
-                    q2_loss.backward()
-                    self.qfunctionB_optimizer.step()
+                # Q-function B update
+                q2 = self.qfunctionB(s, a)
+                q2_loss = F.mse_loss(q2, target_q.detach())
+                self.qfunctionB_optimizer.zero_grad()
+                q2_loss.backward(retain_graph=True)
+                self.qfunctionB_optimizer.step()
 
-                    # Policy update
-                    action_new, log_prob_new, _ = self.policy(s)
-                    q1_pi = self.qfunctionA(s, action_new)
-                    q2_pi = self.qfunctionB(s, action_new)
-                    min_q_pi = torch.min(q1_pi, q2_pi)
-                    policy_loss = (alpha * log_prob_new - min_q_pi).mean()
+                # Policy update
+                action_new, log_prob_new, _ = self.policy(s)
+                q1_pi = self.qfunctionA(s, action_new)
+                q2_pi = self.qfunctionB(s, action_new)
+                min_q_pi = torch.min(q1_pi, q2_pi)
+                policy_loss = (alpha * log_prob_new - min_q_pi).mean()
 
-                    self.policy_optimizer.zero_grad()
-                    policy_loss.backward()
-                    self.policy_optimizer.step()
+                self.policy_optimizer.zero_grad()
+                policy_loss.backward(retain_graph=True)
+                self.policy_optimizer.step()
 
-                    # Alpha (entropy) update
-                    alpha_loss = -(self.log_alpha * (log_prob_new + self.target_entropy).detach()).mean()
-                    self.alpha_optimizer.zero_grad()
-                    alpha_loss.backward()
-                    self.alpha_optimizer.step()
+                # Alpha (entropy) update
+                alpha_loss = -(self.log_alpha * (log_prob_new + self.target_entropy).detach()).mean()
+                self.alpha_optimizer.zero_grad()
+                alpha_loss.backward(retain_graph=True)
+                self.alpha_optimizer.step()
 
-                    # Update target networks
+                # Update target networks
+                if sp%100 == 0:
                     with torch.no_grad():
                         for param, target_param in zip(self.qfunctionA.parameters(), self.qfunctionAtarget.parameters()):
                             target_param.data.mul_(1 - self.tau)

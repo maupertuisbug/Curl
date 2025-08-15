@@ -51,13 +51,13 @@ class BilinearProd(torch.nn.Module):
 
     def forward(self, x):
         # x to be a column vector ([1, latent_dim])
-        return torch.matmul(self.W, x)
+        return torch.transpose(torch.matmul(x, self.W), 0, 1)
 
 
 class CURLWrapper:
     def __init__(self, replay_buffer, stack_size=3):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.storage = replay_buffer
+        self.storage = replay_buffer.experience
         self.stack_size = stack_size
         self.keyEncoder = ImgEncoder(latent_dim = 25).to(self.device)
         self.queryEncoder = ImgEncoder(latent_dim = 25).to(self.device)
@@ -89,7 +89,7 @@ class CURLWrapper:
 
         for epoch in range(0, epochs):
             obs = self.storage.sample(batch_size)
-            obs = self.preprocess(obs)
+            obs = self.preprocess_batch(obs)
             torch.manual_seed(rs_one)
             query_encoded = tf(obs)
             torch.manual_seed(rs_two)
@@ -99,8 +99,8 @@ class CURLWrapper:
             key_encoded   = key_encoded.detach() # no gradient prob 
             proj_key      = self.blp(key_encoded)
             logits        = torch.matmul(query_encoded, proj_key)
-            logits        = logits - max(logits, axis=1)
-            labels        =  torch.arange(logits.shape[0]).long()
+            logits        = logits - logits.max(dim=1, keepdim=True).values
+            labels        =  torch.arange(logits.shape[0]).to(self.device).long()
             loss = torch.nn.functional.cross_entropy(logits, labels)
             self.queryEncoderOptim.zero_grad()
             self.blpOptim.zero_grad()
