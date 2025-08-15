@@ -90,6 +90,7 @@ class CURLWrapper:
         for epoch in range(0, epochs):
             obs = self.storage.sample(batch_size)
             obs = self.preprocess_batch(obs)
+            obs = obs.to(self.device)
             torch.manual_seed(rs_one)
             query_encoded = tf(obs)
             torch.manual_seed(rs_two)

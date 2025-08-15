@@ -17,13 +17,13 @@ def valid(l1, l2, l3, l4, size):
 
 
 class SAC:
-    def __init__(self, env, replay_buffer, latent_dim, wandb_run, encoder):
+    def __init__(self, env, replay_buffer, latent_dim, wandb_run, encoder,train_with_curl):
         self.env = env
         self.replay_buffer = replay_buffer.experience
         self.wandb_run = wandb_run
         self.action_dim = self.env.action_spec().shape[0]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.train_with_repr = False
+        self.train_with_repr = train_with_curl
         if self.train_with_repr:
             self.obs_dim = latent_dim 
             self.encoder = encoder 
@@ -96,7 +96,7 @@ class SAC:
                 reward = 0
                 for _ in range(frame_skip):
                     with torch.no_grad():
-                        obs_img_list.append(torch.tensor(obs_img, device = self.device))
+                        obs_img_list.append(torch.tensor(obs_img))
                         obs = flatten_observation(state.observation)
                         obs_list.append(torch.tensor(obs))
 
@@ -105,7 +105,7 @@ class SAC:
                         next_obs = flatten_observation(state.observation)
                         next_obs_list.append(torch.tensor(next_obs))
                         next_obs_img =np.ascontiguousarray(self.env.physics.render(camera_id = 0, height=100, width = 100))
-                        next_obs_img_list.append(torch.tensor(next_obs_img, device = self.device))
+                        next_obs_img_list.append(torch.tensor(next_obs_img))
 
                         reward = reward + (state.reward or 0.0)
                         obs_img = next_obs_img
@@ -115,13 +115,13 @@ class SAC:
 
                     if valid(obs_list, obs_img_list, next_obs_list, next_obs_img_list, frame_skip):
                         transition = TensorDict({
-                            "obs" : torch.stack(obs_list).to(self.device),
-                            "obs_img" : torch.stack(obs_img_list).to(self.device),
-                            "action" : torch.tensor(action, device=self.device),
-                            "next_obs" : torch.stack(next_obs_list).to(self.device),
-                            "next_obs_img" : torch.stack(next_obs_img_list).to(self.device),
-                            "reward" : torch.tensor(reward, device=self.device),
-                            "done"  : torch.tensor(int(state.last()), device=self.device)
+                            "obs" : torch.stack(obs_list).to("cpu"),
+                            "obs_img" : torch.stack(obs_img_list).to("cpu"),
+                            "action" : torch.tensor(action, device="cpu"),
+                            "next_obs" : torch.stack(next_obs_list).to("cpu"),
+                            "next_obs_img" : torch.stack(next_obs_img_list).to("cpu"),
+                            "reward" : torch.tensor(reward, device="cpu"),
+                            "done"  : torch.tensor(int(state.last()), device="cpu")
                         }, batch_size=[])
                         self.replay_buffer.add(transition)
                         with torch.no_grad():
@@ -135,18 +135,17 @@ class SAC:
                 else :
                     if valid(obs_list, obs_img_list, next_obs_list, next_obs_img_list, frame_skip):
                         transition = TensorDict({
-                            "obs" : torch.stack(obs_list).squeeze(0).to(self.device),
-                            "obs_img" : torch.stack(obs_img_list).squeeze(0).to(self.device),
-                            "action" : torch.tensor(action, device=self.device),
-                            "next_obs" : torch.stack(next_obs_list).squeeze(0).to(self.device),
-                            "next_obs_img" : torch.stack(next_obs_img_list).squeeze(0).to(self.device),
-                            "reward" : torch.tensor(reward, device=self.device),
-                            "done"  : torch.tensor(int(state.last()), device=self.device)
+                            "obs" : torch.stack(obs_list).to("cpu").squeeze(0),
+                            "obs_img" : torch.stack(obs_img_list).to("cpu").squeeze(0),
+                            "action" : torch.tensor(action, device="cpu"),
+                            "next_obs" : torch.stack(next_obs_list).to("cpu").squeeze(0),
+                            "next_obs_img" : torch.stack(next_obs_img_list).to("cpu").squeeze(0),
+                            "reward" : torch.tensor(reward, device="cpu"),
+                            "done"  : torch.tensor(int(state.last()), device="cpu")
                         },batch_size=[])
                         self.replay_buffer.add(transition)
-                        total_reward += reward
                         with torch.no_grad():
-                            action, _, _ = self.policy(torch.stack(obs_img_list).permute(0, 3, 1, 2))
+                            action, _, _ = self.policy(torch.stack(obs_img_list).to(self.device).permute(0, 3, 1, 2))
                             action = action.squeeze(0).cpu().numpy()
 
 
@@ -154,7 +153,7 @@ class SAC:
                 next_obs_list = []
                 obs_img_list = [] 
                 next_obs_img_list = [] 
-                
+                total_reward += reward
                 # Start updates after buffer fills
                 if len(self.replay_buffer) < batch_size:
                     continue
@@ -162,13 +161,13 @@ class SAC:
                 with torch.no_grad():
                     # Sample a batch
                     batch = self.replay_buffer.sample(batch_size)
-                    states = batch["obs"]
-                    states_img  = batch["obs_img"]
-                    actions = batch["action"]
-                    rewards = batch["reward"]
-                    next_states = batch["next_obs"]
-                    next_states_img = batch["next_obs_img"]
-                    dones = batch["done"]
+                    states = batch["obs"].to(self.device)
+                    states_img  = batch["obs_img"].to(self.device)
+                    actions = batch["action"].to(self.device)
+                    rewards = batch["reward"].to(self.device)
+                    next_states = batch["next_obs"].to(self.device)
+                    next_states_img = batch["next_obs_img"].to(self.device)
+                    dones = batch["done"].to(self.device)
 
                     if self.train_with_repr:
                         s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
@@ -239,8 +238,9 @@ class SAC:
 
                 if done:
                     break 
-                rewardsl.append(total_reward)  
-                self.wandb_run.log({'average reward' : np.mean(rewardsl)}, step = ep)
+            
+            rewardsl.append(total_reward)  
+            self.wandb_run.log({'average reward' : np.mean(rewardsl)}, step = ep)
 
 
 

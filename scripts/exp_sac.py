@@ -58,15 +58,15 @@ def run_exp():
     wandb_run = wandb.init(project="CURL")
     rb = RB(1000000, 32, wandb_run)
     train_with_curl = config.curl
-    rb.collect_init(env, 100, 1000, train_with_curl)
+    rb.collect_init(env, 5, 1000, train_with_curl)
     data = rb.sample(2)
     ob = data['obs_img']
     # envw = DMCWrapper(env)
     curl = CURLWrapper(rb)
-    agent = SAC(env, rb, 25, wandb_run, curl)
+    agent = SAC(env, rb, 25, wandb_run, curl, train_with_curl)
     if train_with_curl :
         curl.train_repr(10, 32)
-    agent.train(episodes=600, max_steps=1000)
+    agent.train(episodes=500, max_steps=1000)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
