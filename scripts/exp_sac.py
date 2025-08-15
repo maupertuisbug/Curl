@@ -57,8 +57,8 @@ def run_exp():
 
     wandb_run = wandb.init(project="CURL")
     rb = RB(1000000, 32, wandb_run)
-    train_with_curl = False
-    rb.collect_init(env, 10, 1000, train_with_curl)
+    train_with_curl = config.curl
+    rb.collect_init(env, 100, 1000, train_with_curl)
     data = rb.sample(2)
     ob = data['obs_img']
     # envw = DMCWrapper(env)

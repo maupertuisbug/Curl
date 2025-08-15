@@ -95,21 +95,21 @@ class SAC:
                     self.encoder.train_repr(1,32)
                 reward = 0
                 for _ in range(frame_skip):
-                    
-                    obs_img_list.append(torch.tensor(obs_img, device = self.device))
-                    obs = flatten_observation(state.observation)
-                    obs_list.append(torch.tensor(obs))
+                    with torch.no_grad():
+                        obs_img_list.append(torch.tensor(obs_img, device = self.device))
+                        obs = flatten_observation(state.observation)
+                        obs_list.append(torch.tensor(obs))
 
-                    state = self.env.step(action)
+                        state = self.env.step(action)
 
-                    next_obs = flatten_observation(state.observation)
-                    next_obs_list.append(torch.tensor(next_obs))
-                    next_obs_img =np.ascontiguousarray(self.env.physics.render(camera_id = 0, height=100, width = 100))
-                    next_obs_img_list.append(torch.tensor(next_obs_img, device = self.device))
+                        next_obs = flatten_observation(state.observation)
+                        next_obs_list.append(torch.tensor(next_obs))
+                        next_obs_img =np.ascontiguousarray(self.env.physics.render(camera_id = 0, height=100, width = 100))
+                        next_obs_img_list.append(torch.tensor(next_obs_img, device = self.device))
 
-                    reward = reward + (state.reward or 0.0)
-                    obs_img = next_obs_img
-                    done = state.last()
+                        reward = reward + (state.reward or 0.0)
+                        obs_img = next_obs_img
+                        done = state.last()
                 
                 if frame_skip > 1 :
 
@@ -158,37 +158,36 @@ class SAC:
                 # Start updates after buffer fills
                 if len(self.replay_buffer) < batch_size:
                     continue
-
-                # Sample a batch
-                batch = self.replay_buffer.sample(batch_size)
-                states = batch["obs"]
-                states_img  = batch["obs_img"]
-                actions = batch["action"]
-                rewards = batch["reward"]
-                next_states = batch["next_obs"]
-                next_states_img = batch["next_obs_img"]
-                dones = batch["done"]
-
-                if self.train_with_repr:
-                    s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
-                    s = self.encoder.preprocess(s)
-                    s = tf(s).to(self.device)
-                    s = self.encoder.encode(s)
-
-                    s_next = torch.tensor(next_states_img, dtype = torch.float64, device = self.device)
-                    s_next = self.encoder.preprocess(s_next)
-                    s_next = tf(s_next).to(self.device)
-                    s_next = self.encoder.encode(s_next)
-                else :
-                    s = torch.tensor(states_img.permute(0, 3, 1, 2), dtype=torch.float64, device = self.device)
-                    s_next = torch.tensor(next_states_img.permute(0, 3, 1, 2), dtype=torch.float64, device = self.device)
                 
-                a = torch.tensor(actions, dtype=torch.float32).to(self.device)
-                r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(self.device)
-                d = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(self.device)
-
-                # Sample actions from current policy at next state
                 with torch.no_grad():
+                    # Sample a batch
+                    batch = self.replay_buffer.sample(batch_size)
+                    states = batch["obs"]
+                    states_img  = batch["obs_img"]
+                    actions = batch["action"]
+                    rewards = batch["reward"]
+                    next_states = batch["next_obs"]
+                    next_states_img = batch["next_obs_img"]
+                    dones = batch["done"]
+
+                    if self.train_with_repr:
+                        s = torch.tensor(states_img, dtype=torch.float64, device = self.device)
+                        s = self.encoder.preprocess(s)
+                        s = tf(s).to(self.device)
+                        s = self.encoder.encode(s)
+
+                        s_next = torch.tensor(next_states_img, dtype = torch.float64, device = self.device)
+                        s_next = self.encoder.preprocess(s_next)
+                        s_next = tf(s_next).to(self.device)
+                        s_next = self.encoder.encode(s_next)
+                    else :
+                        s = torch.tensor(states_img.permute(0, 3, 1, 2), dtype=torch.float64, device = self.device)
+                        s_next = torch.tensor(next_states_img.permute(0, 3, 1, 2), dtype=torch.float64, device = self.device)
+                    
+                    a = torch.tensor(actions, dtype=torch.float32).to(self.device)
+                    r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(self.device)
+                    d = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(self.device)
+
                     next_action, log_prob_next_action, _ = self.policy(s_next)
                     q1_next = self.qfunctionAtarget(s_next, next_action)
                     q2_next = self.qfunctionBtarget(s_next, next_action)

@@ -4,4 +4,6 @@ metric:
   name : total_reward
 parameters :
   seed :
-    values : [55, 45, 68]
+    values : [55,89]
+  curl :
+    values : [False, True]
