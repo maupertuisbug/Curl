@@ -64,7 +64,8 @@ def run_exp():
     # envw = DMCWrapper(env)
     curl = CURLWrapper(rb)
     agent = SAC(env, rb, 25, wandb_run, curl)
-    curl.train_repr(10, 32)
+    if train_with_curl :
+        curl.train_repr(10, 32)
     agent.train(episodes=600, max_steps=1000)
 
 if __name__ == "__main__":
