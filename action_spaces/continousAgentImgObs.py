@@ -90,6 +90,7 @@ class SAC:
             next_obs_img_list = []
             obs_list = []
             next_obs_list = []
+            done = False
             for sp in range(max_steps-1):
                 if self.train_with_repr:
                     self.encoder.train_repr(1,32)

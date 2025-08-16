@@ -62,8 +62,8 @@ def run_exp():
     data = rb.sample(2)
     ob = data['obs_img']
     # envw = DMCWrapper(env)
-    curl = CURLWrapper(rb)
-    agent = SAC(env, rb, 25, wandb_run, curl, train_with_curl)
+    curl = CURLWrapper(rb, wandb_run)
+    agent = SAC(env, rb, 50, wandb_run, curl, train_with_curl)
     if train_with_curl :
         curl.train_repr(10, 32)
     agent.train(episodes=500, max_steps=1000)
